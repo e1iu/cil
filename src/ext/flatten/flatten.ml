@@ -37,63 +37,80 @@ let addrOfExp e : typ = addrOfType (typeOf e)
 
 let condExp = one
 
+let rec expandCond t = 
+  match t with
+  | [] -> error ()
+  | [x] -> x
+  | x :: rest ->
+     BinOp(LAnd, x, expandCond rest, typeOf x)
+         
+
 let rec doStmt s cond =
   match s.skind with
   | Instr (x) ->
      s.skind <- Instr(List.flatten (List.map (fun e -> doInstr e cond) x))
   | Return (eop, loc) -> ()
-  | Goto (sr, loc) ->  ()
-  | ComputedGoto (e, loc) -> ()
-  | Break (_) ->  ()
-  | Continue (_) -> ()
-  | If (c, t, e, loc) -> ()
-  | Switch (_, _, _, _) ->  ()
-  | Loop (b, loc, x, y) ->  ()
-  | Block (b) ->  ()
-  | TryFinally (_, _, _) ->  ()
-  | TryExcept (_, _, _, _) ->  ()
+  | Goto (sr, loc) ->  todo ()
+  | ComputedGoto (e, loc) -> todo ()
+  | Break (_) ->  todo ()
+  | Continue (_) -> todo ()
+  | If (e, tb, eb, loc) ->
+     let _ = doBlock tb (e :: cond) in
+     let _ = doBlock eb (e :: cond) in
+     s.skind <- Block(mkBlock (List.append tb.bstmts eb.bstmts))
+  | Switch (_, _, _, _) ->  todo ()
+  | Loop (b, loc, x, y) ->  todo ()
+  | Block (b) ->  todo ()
+  | TryFinally (_, _, _) ->  todo ()
+  | TryExcept (_, _, _, _) ->  todo ()
              
 and doIf cond t e loc =
   todo ()
       
 and doInstr t cond =
-  match t with
-  | Set (l, (Lval(Mem(e), off) as r) , loc) ->
-     let s = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
-     let s' = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
-     [Set(mkArraySelect s zero, dummyMem', loc)
-     ; Set(mkArraySelect s one, mkAddrOrStartOf (Mem(e), off), loc)
-     ; Set(mkArraySelect s' zero, dummyMem', loc)
-     ; Set(mkArraySelect  s' one, mkAddrOrStartOf l, loc)
-     ; Set(mkMem (Lval(mkArraySelect s' one)) NoOffset
-         , Lval(mkMem (Lval(mkArraySelect s one)) NoOffset)
-         , loc)]
-  | Set (l, e, loc) ->
-     let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
-     [Set(mkArraySelect s zero, dummyMem', loc)
-     ; Set(mkArraySelect s one, mkAddrOrStartOf l, loc)
-     ; Set((mkMem (Lval(mkArraySelect s condExp)) NoOffset), e, loc)]
-  | Call (l, e, es, loc) ->
-     let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
-     let r = match l with
-       | Some l ->
-          let (t, _, _, _) = splitFunctionType (typeOf e) in
-          let s' = makeTempVar !currentFunc (makeArray (addrOfType t)) in
-          [Set(mkArraySelect s' zero, dummyMem', loc)
-          ; Set(mkArraySelect s' one, mkAddrOrStartOf l, loc)
-          ; Set(mkArraySelect s zero, Lval(var dummyFun), loc)
-          ; Set(mkArraySelect s one, e, loc)
-          ; Call(Some (mkMem (Lval(mkArraySelect s' condExp)) NoOffset)
-               , Lval(mkArraySelect s condExp)
-               , es
-               , loc)]
-       | None -> 
-          [Set(mkArraySelect s zero, Lval(var dummyFun), loc)
-          ; Set(mkArraySelect s one, e, loc)
-          ; Call(None, Lval((mkArraySelect s condExp)), es, loc)]
-     in
-     r
-  | Asm (_, _, _, _, _, _) -> todo ()
+  if List.length cond = 0 then
+    [t]
+  else
+    begin
+      let cond = expandCond cond in
+      match t with
+      | Set (l, (Lval(Mem(e), off) as r) , loc) ->
+         let s = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
+         let s' = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
+         [Set(mkArraySelect s zero, dummyMem', loc)
+         ; Set(mkArraySelect s one, mkAddrOrStartOf (Mem(e), off), loc)
+         ; Set(mkArraySelect s' zero, dummyMem', loc)
+         ; Set(mkArraySelect  s' one, mkAddrOrStartOf l, loc)
+         ; Set(mkMem (Lval(mkArraySelect s' one)) NoOffset
+             , Lval(mkMem (Lval(mkArraySelect s one)) NoOffset)
+             , loc)]
+      | Set (l, e, loc) ->
+         let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
+         [Set(mkArraySelect s zero, dummyMem', loc)
+         ; Set(mkArraySelect s one, mkAddrOrStartOf l, loc)
+         ; Set((mkMem (Lval(mkArraySelect s cond)) NoOffset), e, loc)]
+      | Call (l, e, es, loc) ->
+         let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
+         let r = match l with
+           | Some l ->
+              let (t, _, _, _) = splitFunctionType (typeOf e) in
+              let s' = makeTempVar !currentFunc (makeArray (addrOfType t)) in
+              [Set(mkArraySelect s' zero, dummyMem', loc)
+              ; Set(mkArraySelect s' one, mkAddrOrStartOf l, loc)
+              ; Set(mkArraySelect s zero, Lval(var dummyFun), loc)
+              ; Set(mkArraySelect s one, e, loc)
+              ; Call(Some (mkMem (Lval(mkArraySelect s' cond)) NoOffset)
+                   , Lval(mkArraySelect s cond)
+                   , es
+                   , loc)]
+           | None -> 
+              [Set(mkArraySelect s zero, Lval(var dummyFun), loc)
+              ; Set(mkArraySelect s one, e, loc)
+              ; Call(None, Lval((mkArraySelect s cond)), es, loc)]
+         in
+         r
+      | Asm (_, _, _, _, _, _) -> todo ()
+    end
 
 
 and doStmts t cond =
