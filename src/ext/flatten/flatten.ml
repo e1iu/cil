@@ -2,11 +2,6 @@ open Cil
 open Feature
 module E = Errormsg
 
-let currentFile : file ref = ref {fileName="dummy"
-                                ; globals=[]
-                                ; globinit=None
-                                ; globinitcalled=false}
-let currentGlobal : global ref = ref (GText "dummy")
 let currentFunc : fundec ref = ref (emptyFunction "@dummy")
                                    
 let todo () = E.s (E.error "todo")
@@ -14,9 +9,7 @@ let error () = E.s (E.error "impossible")
 
 let two = integer 2
 let makeArray t = TArray(t, Some two, [])
-let mkArraySelect vi e : lval = (Var vi, e)
-let mkArraySelect_0 vi : lval = mkArraySelect vi (Index(zero, NoOffset))
-let mkArraySelect_1 vi : lval = mkArraySelect vi (Index(one, NoOffset))
+let mkArraySelect vi e : lval = (Var vi, Index(e, NoOffset))
 
 let dummyLocation = {line = 0; file = ""; byte = 0;}
 
@@ -25,14 +18,24 @@ let dummyMem : varinfo =
     makeGlobalVar "dummy_mem" (TArray(charType, Some(integer 1024), [])) in
   x.vstorage <- Static; x
 
+let dummyMem' : exp = mkAddrOrStartOf (var dummyMem)
+  
+
 let dummyFun : varinfo =
   makeVarinfo false "dummy_f" (TFun(voidType, Some [], false ,[]))
 
 let dummyFunDecl : fundec =
   let x = emptyFunction "dummy_f" in
   x.svar.vstorage <- Static; x
+
+
+let addrOfType t : typ =
+  typeOf(mkAddrOrStartOf (var (makeVarinfo false "" t)))
+
+let addrOfExp e : typ = addrOfType (typeOf e)
   
-                       
+
+let condExp = one
 
 let rec doStmt s cond =
   match s.skind with
@@ -56,77 +59,58 @@ and doIf cond t e loc =
 and doInstr t cond =
   match t with
   | Set (l, (Lval(Mem(e), off) as r) , loc) ->
-     let d1 = makeTempVar !currentFunc (typeOf r) in
-     let s1 = makeTempVar !currentFunc
-                (makeArray (typeOf(mkAddrOrStartOf (var d1)))) in
-     let d2 = makeTempVar !currentFunc (typeOf r) in
-     let s2 = makeTempVar !currentFunc
-                (makeArray (typeOf(mkAddrOrStartOf (var d2)))) in
-     [Set(mkArraySelect_0 s1, mkAddrOrStartOf (var d1), loc)
-     ; Set(mkArraySelect_1 s1, mkAddrOrStartOf (Mem(e), off), loc)
-     ; Set(mkArraySelect_0 s2, mkAddrOrStartOf (var d2), loc)
-     ; Set(mkArraySelect_1 s2, mkAddrOrStartOf l, loc)
-     ; Set( mkMem (Lval(mkArraySelect_1 s2)) NoOffset
-          , Lval(mkMem (Lval(mkArraySelect_1 s1)) NoOffset)
-          , loc)]
+     let s = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
+     let s' = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
+     [Set(mkArraySelect s zero, dummyMem', loc)
+     ; Set(mkArraySelect s one, mkAddrOrStartOf (Mem(e), off), loc)
+     ; Set(mkArraySelect s' zero, dummyMem', loc)
+     ; Set(mkArraySelect  s' one, mkAddrOrStartOf l, loc)
+     ; Set(mkMem (Lval(mkArraySelect s' one)) NoOffset
+         , Lval(mkMem (Lval(mkArraySelect s one)) NoOffset)
+         , loc)]
   | Set (l, e, loc) ->
-     let dummy = makeTempVar !currentFunc (typeOf e) in
-     let s = makeTempVar !currentFunc
-               (makeArray (typeOf(mkAddrOrStartOf (var dummy)))) in
-     [Set(mkArraySelect_0 s, mkAddrOrStartOf (var dummy), loc)
-     ; Set(mkArraySelect_1 s, mkAddrOrStartOf l, loc)
-     ; Set((mkMem (Lval(mkArraySelect s (Index(one, NoOffset)))) NoOffset), e, loc)]
+     let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
+     [Set(mkArraySelect s zero, dummyMem', loc)
+     ; Set(mkArraySelect s one, mkAddrOrStartOf l, loc)
+     ; Set((mkMem (Lval(mkArraySelect s condExp)) NoOffset), e, loc)]
   | Call (l, e, es, loc) ->
-     let s = makeTempVar !currentFunc (makeArray (TPtr((typeOf e), []))) in
+     let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
      let r = match l with
        | Some l ->
           let (t, _, _, _) = splitFunctionType (typeOf e) in
-          let dummy = makeTempVar !currentFunc t in
-          let s' = makeTempVar !currentFunc (makeArray (typeOf(mkAddrOrStartOf (var dummy)))) in
-          [Set(mkArraySelect_0 s', mkAddrOrStartOf (var dummy), loc)
-          ; Set(mkArraySelect_1 s', mkAddrOrStartOf l, loc)
-          ; Set(mkArraySelect_1 s
-              , Lval(Var(makeVarinfo false "dummy_f" (TFun(voidType
-                                                         , Some []
-                                                         , false
-                                                         ,[]))), NoOffset)
-              , loc)
-          ; Set(mkArraySelect_0 s, e, loc)
-          ; Call(Some (mkMem (Lval(mkArraySelect s' (Index(one, NoOffset)))) NoOffset)
-               , Lval(mkArraySelect s (Index(one, NoOffset)))
+          let s' = makeTempVar !currentFunc (makeArray (addrOfType t)) in
+          [Set(mkArraySelect s' zero, dummyMem', loc)
+          ; Set(mkArraySelect s' one, mkAddrOrStartOf l, loc)
+          ; Set(mkArraySelect s zero, Lval(var dummyFun), loc)
+          ; Set(mkArraySelect s one, e, loc)
+          ; Call(Some (mkMem (Lval(mkArraySelect s' condExp)) NoOffset)
+               , Lval(mkArraySelect s condExp)
                , es
                , loc)]
        | None -> 
-          [Set(mkArraySelect_0 s
-             , Lval(Var(makeVarinfo false "dummy_f" (TFun(voidType
-                                                        , Some []
-                                                        , false
-                                                        ,[])))
-                  , NoOffset)
-             , loc)
-          ; Set(mkArraySelect_1 s, e, loc)
-          ; Call(None, Lval((mkArraySelect s (Index(one, NoOffset)))), es, loc)]
+          [Set(mkArraySelect s zero, Lval(var dummyFun), loc)
+          ; Set(mkArraySelect s one, e, loc)
+          ; Call(None, Lval((mkArraySelect s condExp)), es, loc)]
      in
      r
   | Asm (_, _, _, _, _, _) -> todo ()
-                            
-let rec scanStmts t =
+
+
+and doStmts t cond =
   match t with
-  |  [] -> ()
+  | [] -> ()
   | x :: rests ->
-     doStmt x []; 
-     scanStmts rests
-     
-let scanBlock t =
-  scanStmts t.bstmts
-  
+     doStmt x cond; 
+     doStmts rests cond
+
+
+and doBlock t cond =
+  doStmts t.bstmts cond
             
   
 let scanFunc f =
   currentFunc := f;
-  scanBlock f.sbody
-            
-    
+  doBlock f.sbody []
     
     
 let feature = 
