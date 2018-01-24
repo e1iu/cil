@@ -37,12 +37,12 @@ let addrOfExp e : typ = addrOfType (typeOf e)
 
 let condExp = one
 
-let rec expandCond t = 
+let rec combineExp t op =
   match t with
   | [] -> error ()
   | [x] -> x
   | x :: rest ->
-     BinOp(LAnd, x, expandCond rest, typeOf x)
+     BinOp(op, x, combineExp rest op, typeOf x)
          
 
 let rec doStmt s cond =
@@ -55,24 +55,24 @@ let rec doStmt s cond =
   | Break (_) ->  todo ()
   | Continue (_) -> todo ()
   | If (e, tb, eb, loc) ->
-     let _ = doBlock tb (e :: cond) in
-     let _ = doBlock eb (e :: cond) in
-     s.skind <- Block(mkBlock (List.append tb.bstmts eb.bstmts))
+     let tmp = makeTempVar !currentFunc (typeOf e) in
+     let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
+     let _ = doBlock tb (Lval(var tmp) :: cond) in
+     let _ = doBlock eb (Lval(var tmp) :: cond) in
+     s.skind <- Block(mkBlock (set :: (List.append tb.bstmts eb.bstmts)))
   | Switch (_, _, _, _) ->  todo ()
   | Loop (b, loc, x, y) ->  todo ()
   | Block (b) ->  todo ()
   | TryFinally (_, _, _) ->  todo ()
   | TryExcept (_, _, _, _) ->  todo ()
              
-and doIf cond t e loc =
-  todo ()
       
 and doInstr t cond =
   if List.length cond = 0 then
     [t]
   else
     begin
-      let cond = expandCond cond in
+      let cond = combineExp cond LAnd in
       match t with
       | Set (l, (Lval(Mem(e), off) as r) , loc) ->
          let s = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
