@@ -43,12 +43,18 @@ let rec combineExp t op =
   | [x] -> x
   | x :: rest ->
      BinOp(op, x, combineExp rest op, typeOf x)
-         
 
-let rec doStmt s cond =
+let mkLNot e =
+  UnOp(LNot, e, typeOf e)
+
+let mkLAnd x y =
+  BinOp(LAnd, x, y, typeOf x)
+
+
+let rec fltStmt s cond =
   match s.skind with
   | Instr (x) ->
-     s.skind <- Instr(List.flatten (List.map (fun e -> doInstr e cond) x))
+     s.skind <- Instr(List.flatten (List.map (fun e -> fltInstr e cond) x))
   | Return (eop, loc) -> ()
   | Goto (sr, loc) ->  todo ()
   | ComputedGoto (e, loc) -> todo ()
@@ -57,8 +63,9 @@ let rec doStmt s cond =
   | If (e, tb, eb, loc) ->
      let tmp = makeTempVar !currentFunc (typeOf e) in
      let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
-     let _ = doBlock tb (Lval(var tmp) :: cond) in
-     let _ = doBlock eb (Lval(var tmp) :: cond) in
+     let condition = mkLAnd (Lval(var tmp)) cond in
+     let _ = List.iter (fun e -> fltStmt e condition) tb.bstmts in
+     let _ = List.iter (fun e -> fltStmt e (mkLNot condition)) eb.bstmts in
      s.skind <- Block(mkBlock (set :: (List.append tb.bstmts eb.bstmts)))
   | Switch (_, _, _, _) ->  todo ()
   | Loop (b, loc, x, y) ->  todo ()
@@ -67,12 +74,7 @@ let rec doStmt s cond =
   | TryExcept (_, _, _, _) ->  todo ()
              
       
-and doInstr t cond =
-  if List.length cond = 0 then
-    [t]
-  else
-    begin
-      let cond = combineExp cond LAnd in
+and fltInstr t cond =
       match t with
       | Set (l, (Lval(Mem(e), off) as r) , loc) ->
          let s = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
@@ -110,24 +112,20 @@ and doInstr t cond =
          in
          r
       | Asm (_, _, _, _, _, _) -> todo ()
-    end
 
 
-and doStmts t cond =
-  match t with
-  | [] -> ()
-  | x :: rests ->
-     doStmt x cond; 
-     doStmts rests cond
-
-
-and doBlock t cond =
-  doStmts t.bstmts cond
-            
-  
 let scanFunc f =
   currentFunc := f;
-  doBlock f.sbody []
+  List.iter (fun s -> match s.skind with
+                      | If(e, tb, eb, loc) ->
+                         let tmp = makeTempVar !currentFunc (typeOf e) in
+                         let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
+                         let condition = Lval(var tmp) in
+                         let _ = List.iter (fun e -> fltStmt e condition) tb.bstmts in
+                         let _ = List.iter (fun e -> fltStmt e (mkLNot condition)) eb.bstmts in
+                         s.skind <- Block(mkBlock (set :: (List.append tb.bstmts eb.bstmts)))
+                      | _ -> ())
+    f.sbody.bstmts
     
     
 let feature = 
