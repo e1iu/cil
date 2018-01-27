@@ -45,18 +45,28 @@ let addrOfType t : typ =
 let addrOfExp e : typ = addrOfType (typeOf e)
                       
 
-let mkLNot e =
-  UnOp(LNot, e, typeOf e)
-
 let mkLAnd x y =
   BinOp(LAnd, x, y, typeOf x)
 
-let rec splitCondition = function
-  | BinOp(LAnd, Lval(Var vi, NoOffset), r, _) ->
-     vi :: (splitCondition r)
-  | UnOp(LNot, Lval(Var vi, NoOffset), _) -> [vi]
-  | Lval(Var vi, NoOffset) -> [vi]
-  | _ -> error ()
+  
+let mkTrue e =
+  BinOp(Ne, e, zero, intType)
+
+  
+let mkFalse e =
+  BinOp(Eq, e, zero, intType)
+
+  
+let rec splitCondition t =
+  match t with
+  | BinOp(LAnd, l, r, _) -> (splitCondition l) @ (splitCondition r)
+  | BinOp(Eq, Lval(Var vi, NoOffset), r, _) -> (vi, zero) :: (splitCondition r)
+  | BinOp(Ne, Lval(Var vi, NoOffset), r, _) -> (vi, one) :: (splitCondition r)
+  | Const (CInt64(_, _, _)) -> []
+  | _ -> 
+     let p = new Cil.defaultCilPrinterClass in
+     print_string (Pretty.sprint 80 (p#pExp () t));
+     error ()
 
 
 let fltInstr t cond : stmt =
@@ -111,49 +121,51 @@ let fltGoto sr loc cond : stmt list =
   ; mkStmt (ComputedGoto(Lval(mkArraySelect s cond) , loc))
   ; dummy]
 
+  
+let mkLabel (l : label list) : stmt =
+  let s = mkEmptyStmt () in
+  s.labels <- l;
+  s
+
+  
+
 let rec fltStmt s cond : stmt list =
   let rec pickLabel = function
-      [] -> None
+    | [] -> None
     | Label (l, _, _) :: _ -> Some l
     | _ :: rest -> pickLabel rest
   in
+  let x =
+    match s.skind with
+    | Instr (x) ->
+       List.map (fun e -> fltInstr e cond) x
+    | Return (eop, loc) -> error ()
+    | Goto (sr, loc) ->
+       fltGoto sr loc cond
+    | ComputedGoto (e, loc) -> todo ()
+    | Break (_) ->  error ()
+    | Continue (_) -> error ()
+    | If (e, tb, eb, loc) ->
+       let tmp = makeTempVar !currentFunc (typeOf e) in
+       let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
+       let x = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkTrue (Lval (var tmp))) cond)) tb.bstmts) in
+       let y = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkFalse (Lval (var tmp))) cond)) eb.bstmts) in
+       set ::(x @ y)
+    | Switch (_, _, _, _) ->  error ()
+    | Loop (b, loc, x, y) ->  error ()
+    | Block (b) ->
+       List.flatten (List.map (fun e -> fltStmt e cond) b.bstmts)
+    | TryFinally (_, _, _) ->  todo ()
+    | TryExcept (_, _, _, _) ->  todo ()
+  in
   match pickLabel s.labels with
-  | None -> fltStmt' s cond
+  | None -> x
   | Some l ->
-     let label = mkEmptyStmt () in
-     let _ = label.labels <- s.labels in
-     let dummy = mkEmptyStmt () in
-     let _ = dummy.labels <- [Label(freshLabel "FLT", dummyLocation, false)] in
-     let goto = mkStmt (Goto(ref dummy, dummyLocation)) in
-     let vi = splitCondition cond in
-     let set = List.map (fun e -> mkStmt (Instr([Set(var e, one, dummyLocation)]))) vi in
-     ([goto; label] @ set) @ (dummy::(fltStmt' s cond))
-  
-
-and fltStmt' s cond : stmt list =
-  match s.skind with
-  | Instr (x) ->
-     List.map (fun e -> fltInstr e cond) x
-  | Return (eop, loc) -> error ()
-  | Goto (sr, loc) ->
-     fltGoto sr loc cond
-  | ComputedGoto (e, loc) -> todo ()
-  | Break (_) ->  error ()
-  | Continue (_) -> error ()
-  | If (e, tb, eb, loc) ->
-     let tmp = makeTempVar !currentFunc (typeOf e) in
-     let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
-     let condition = mkLAnd (Lval(var tmp)) cond in
-     let x = List.flatten (List.map (fun e -> fltStmt e condition) tb.bstmts) in
-     let y = List.flatten (List.map (fun e -> fltStmt e (mkLNot condition)) eb.bstmts) in
-     x @ y
-  | Switch (_, _, _, _) ->  error ()
-  | Loop (b, loc, x, y) ->  error ()
-  | Block (b) ->
-     List.flatten (List.map (fun e -> fltStmt e cond) b.bstmts)
-  | TryFinally (_, _, _) ->  todo ()
-  | TryExcept (_, _, _, _) ->  todo ()
-                             
+     let dummy = mkLabel [Label(freshLabel "FLT", dummyLocation, false)] in
+     [mkStmt (Goto(ref dummy, dummyLocation))
+     ; mkLabel s.labels
+     ; (mkStmt (Instr(List.map (fun (vi, n) -> Set(var vi, n, dummyLocation)) (splitCondition cond))))
+     ; dummy] @ x
 
 
 let scanFunc f =
@@ -162,9 +174,8 @@ let scanFunc f =
                       | If(e, tb, eb, loc) ->
                          let tmp = makeTempVar !currentFunc (typeOf e) in
                          let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
-                         let condition = Lval(var tmp) in
-                         let x = List.flatten (List.map (fun e -> fltStmt e condition) tb.bstmts) in
-                         let y = List.flatten (List.map (fun e -> fltStmt e (mkLNot condition)) eb.bstmts) in
+                         let x = List.flatten (List.map (fun t -> fltStmt t (mkTrue (Lval(var tmp)))) tb.bstmts) in
+                         let y = List.flatten (List.map (fun t -> fltStmt t (mkFalse (Lval(var tmp)))) eb.bstmts) in
                          s.skind <- Block(mkBlock (set :: (List.append x y)))
                       | _ -> ())
     f.sbody.bstmts
