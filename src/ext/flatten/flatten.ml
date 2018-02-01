@@ -130,6 +130,7 @@ let mkLabel (l : label list) : stmt =
   
 
 let rec fltStmt s cond : stmt list =
+  print_string "flt Stmt\n";
   let rec pickLabel = function
     | [] -> None
     | Label (l, _, _) :: _ -> Some l
@@ -139,20 +140,32 @@ let rec fltStmt s cond : stmt list =
     match s.skind with
     | Instr (x) ->
        List.map (fun e -> fltInstr e cond) x
-    | Return (eop, loc) -> error ()
+    | Return (eop, loc) ->
+       print_string "return\n";
+       error ()
     | Goto (sr, loc) ->
        fltGoto sr loc cond
     | ComputedGoto (e, loc) -> todo ()
-    | Break (_) ->  error ()
-    | Continue (_) -> error ()
+    | Break (loc) ->
+       print_string "break\n";
+       print_string loc.file;
+       print_int loc.line;
+       error ()
+    | Continue (_) ->
+       print_string "continue\n";
+       error ()
     | If (e, tb, eb, loc) ->
        let tmp = makeTempVar !currentFunc (typeOf e) in
        let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
        let x = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkTrue (Lval (var tmp))) cond)) tb.bstmts) in
        let y = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkFalse (Lval (var tmp))) cond)) eb.bstmts) in
        set ::(x @ y)
-    | Switch (_, _, _, _) ->  error ()
-    | Loop (b, loc, x, y) ->  error ()
+    | Switch (_, _, _, _) ->
+       print_string "switch\n";
+       error ()
+    | Loop (b, loc, x, y) ->
+       print_string "loop\n";
+       error ()
     | Block (b) ->
        List.flatten (List.map (fun e -> fltStmt e cond) b.bstmts)
     | TryFinally (_, _, _) ->  todo ()
@@ -170,15 +183,24 @@ let rec fltStmt s cond : stmt list =
 
 let scanFunc f =
   currentFunc := f;
-  List.iter (fun s -> match s.skind with
-                      | If(e, tb, eb, loc) ->
-                         let tmp = makeTempVar !currentFunc (typeOf e) in
-                         let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
-                         let x = List.flatten (List.map (fun t -> fltStmt t (mkTrue (Lval(var tmp)))) tb.bstmts) in
-                         let y = List.flatten (List.map (fun t -> fltStmt t (mkFalse (Lval(var tmp)))) eb.bstmts) in
-                         s.skind <- Block(mkBlock (set :: (List.append x y)))
-                      | _ -> ())
-    f.sbody.bstmts
+  let rec scanStmt s =
+    match s.skind with
+    | If (e, tb, eb, loc) ->
+       print_string "scan If\n";
+       let tmp = makeTempVar !currentFunc (typeOf e) in
+       let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
+       let x = List.flatten (List.map (fun t -> fltStmt t (mkTrue (Lval(var tmp)))) tb.bstmts) in
+       let y = List.flatten (List.map (fun t -> fltStmt t (mkFalse (Lval(var tmp)))) eb.bstmts) in
+       s.skind <- Block(mkBlock (set :: (List.append x y)))
+    | Block (b) ->
+       print_string "scan Block\n";
+       List.iter scanStmt b.bstmts
+    | Loop (b, _, _, _) ->
+       print_string "scan Loop\n";
+       List.iter scanStmt b.bstmts
+    | _ -> ()
+  in
+  List.iter scanStmt f.sbody.bstmts
   
   
 let feature = 
