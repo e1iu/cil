@@ -127,6 +127,19 @@ let mkLabel (l : label list) : stmt =
   s.labels <- l;
   s
 
+
+let fltSpecial s cond : stmt list =
+  let a = makeTempVar !currentFunc (makeArray voidPtrType) in
+  let l1 = mkEmptyStmt () in
+  let l2 = mkEmptyStmt () in
+  let _ = l1.labels <- [Label(freshLabel "FLT", dummyLocation, false)] in
+  let _ = l2.labels <- [Label(freshLabel "FLT", dummyLocation, false)] in
+  [mkStmt (Instr([Set(mkArraySelect a zero, AddrOfLabel(ref l1), dummyLocation)
+                 ; Set(mkArraySelect a one, AddrOfLabel(ref l2), dummyLocation)]))
+  ; mkStmt (ComputedGoto(Lval(mkArraySelect a cond), dummyLocation))
+  ; l2
+  ; s
+  ; l1]
   
 
 let rec fltStmt s cond : stmt list =
@@ -141,19 +154,14 @@ let rec fltStmt s cond : stmt list =
     | Instr (x) ->
        List.map (fun e -> fltInstr e cond) x
     | Return (eop, loc) ->
-       print_string "return\n";
-       error ()
+       fltSpecial s cond
     | Goto (sr, loc) ->
        fltGoto sr loc cond
     | ComputedGoto (e, loc) -> todo ()
     | Break (loc) ->
-       print_string "break\n";
-       print_string loc.file;
-       print_int loc.line;
-       error ()
+       fltSpecial s cond
     | Continue (_) ->
-       print_string "continue\n";
-       error ()
+       fltSpecial s cond
     | If (e, tb, eb, loc) ->
        let tmp = makeTempVar !currentFunc (typeOf e) in
        let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
@@ -161,11 +169,9 @@ let rec fltStmt s cond : stmt list =
        let y = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkFalse (Lval (var tmp))) cond)) eb.bstmts) in
        set ::(x @ y)
     | Switch (_, _, _, _) ->
-       print_string "switch\n";
-       error ()
+       fltSpecial s cond
     | Loop (b, loc, x, y) ->
-       print_string "loop\n";
-       error ()
+       fltSpecial s cond
     | Block (b) ->
        List.flatten (List.map (fun e -> fltStmt e cond) b.bstmts)
     | TryFinally (_, _, _) ->  todo ()
@@ -211,8 +217,9 @@ let feature =
     fd_doit = (function (f : file) -> 
                  let _ = iterGlobals f (fun glob ->
                              match glob with
-                             | GFun (fd,_) -> scanFunc fd
-                             | _ -> ()) in
+                             | GFun (fd, _) -> scanFunc fd
+                             | _ -> ())
+                 in
                  f.globals <- GFun(dummyFunDecl, dummyLocation) :: f.globals;
                  f.globals <- GVar(dummyMem , {init=None}, dummyLocation) :: f.globals;
               );
