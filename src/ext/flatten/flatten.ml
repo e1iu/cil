@@ -74,8 +74,7 @@ let rec fltExp t cond : (stmt list * exp) =
   match t with
   | Const (_) -> ([], t)
   | Lval (lval) -> todo ()
-  | Lval (Mem(e), off) ->
-     
+  | Lval (Mem(e), off) -> todo ()
   | SizeOf (_) -> ([], t)
   | SizeOfE (e) ->
      let x = fltExp e cond in
