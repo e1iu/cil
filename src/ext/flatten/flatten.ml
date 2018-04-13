@@ -70,11 +70,19 @@ let rec splitCondition t =
 
 
 
-let rec fltExp t cond : (stmt list * exp) =
+let rec fltExp t cond : (instr list * exp) =
   match t with
   | Const (_) -> ([], t)
-  | Lval (lval) -> todo ()
-  | Lval (Mem(e), off) -> todo ()
+  | Lval ((Mem(e), off) as lval) ->
+     let x = fltExp e cond in
+     let y = fltOffset off cond in
+     let s = makeTempVar !currentFunc (makeArray (addrOfExp t)) in
+     ((fst x) @ (fst y) @ [Set(mkArraySelect s zero, dummyMem', dummyLocation)
+                          ; Set(mkArraySelect s one, mkAddrOrStartOf lval, dummyLocation)]
+     , Lval(mkMem (Lval(mkArraySelect s cond)) NoOffset))
+  | Lval (var, off) ->
+     let x = fltOffset off cond in
+     (fst x, Lval(var, snd x))
   | SizeOf (_) -> ([], t)
   | SizeOfE (e) ->
      let x = fltExp e cond in
@@ -99,16 +107,18 @@ let rec fltExp t cond : (stmt list * exp) =
   | CastE (typ, e) ->
      let x = fltExp e cond in
      (fst x, CastE(typ, snd x))
-  | AddrOf (lval) -> todo ()
+  (* TODO *)
+  | AddrOf (lval) -> ([], t)
   | AddrOfLabel (s) -> ([], t)
-  | StartOf (lval) -> todo ()
+  (* TODO *)
+  | StartOf (lval) -> ([], t)
 
-and fltLval (lhost, offset) cond : (stmt list * lval) =
+and fltLval (lhost, offset) cond : (instr list * lval) =
   let x = fltLhost lhost cond in
   let y = fltOffset offset cond in
   (((fst x) @ (fst y)), (snd x, snd y))
 
-and fltLhost t cond : (stmt list * lhost) =
+and fltLhost t cond : (instr list * lhost) =
   match t with
   | Var (_) -> ([], t)
   | Mem (e) ->
@@ -116,7 +126,7 @@ and fltLhost t cond : (stmt list * lhost) =
      (fst x, Mem(snd x))
 
   
-and fltOffset t cond : (stmt list * offset) =
+and fltOffset t cond : (instr list * offset) =
   match t with
   | NoOffset -> ([], t)
   | Field (fi, off) ->
@@ -132,21 +142,12 @@ and fltOffset t cond : (stmt list * offset) =
 let fltInstr t cond : stmt =
   let r = 
     match t with
-    | Set (l, (Lval(Mem(e), off) as r) , loc) ->
-       let s = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
-       let s' = makeTempVar !currentFunc (makeArray (addrOfExp r)) in
-       [Set(mkArraySelect s zero, dummyMem', loc)
-       ; Set(mkArraySelect s one, mkAddrOrStartOf (Mem(e), off), loc)
-       ; Set(mkArraySelect s' zero, dummyMem', loc)
-       ; Set(mkArraySelect s' one, mkAddrOrStartOf l, loc)
-       ; Set(mkMem (Lval(mkArraySelect s' cond)) NoOffset
-           , Lval(mkMem (Lval(mkArraySelect s cond)) NoOffset)
-           , loc)]
     | Set (l, e, loc) ->
+       let x = fltExp e cond in
        let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
-       [Set(mkArraySelect s zero, dummyMem', loc)
-       ; Set(mkArraySelect s one, mkAddrOrStartOf l, loc)
-       ; Set((mkMem (Lval(mkArraySelect s cond)) NoOffset), e, loc)]
+       (fst x) @ [Set(mkArraySelect s zero, dummyMem', loc)
+                 ; Set(mkArraySelect s one, mkAddrOrStartOf l, loc)
+                 ; Set((mkMem (Lval(mkArraySelect s cond)) NoOffset), snd x, loc)]
     | Call (l, e, es, loc) ->
        let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
        let r = match l with
