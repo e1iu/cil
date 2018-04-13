@@ -59,15 +59,76 @@ let mkFalse e =
   
 let rec splitCondition t =
   match t with
-  | BinOp(LAnd, l, r, _) -> (splitCondition l) @ (splitCondition r)
-  | BinOp(Eq, Lval(Var vi, NoOffset), r, _) -> (vi, zero) :: (splitCondition r)
-  | BinOp(Ne, Lval(Var vi, NoOffset), r, _) -> (vi, one) :: (splitCondition r)
+  | BinOp (LAnd, l, r, _) -> (splitCondition l) @ (splitCondition r)
+  | BinOp (Eq, Lval(Var vi, NoOffset), r, _) -> (vi, zero) :: (splitCondition r)
+  | BinOp (Ne, Lval(Var vi, NoOffset), r, _) -> (vi, one) :: (splitCondition r)
   | Const (CInt64(_, _, _)) -> []
   | _ -> 
      let p = new Cil.defaultCilPrinterClass in
      print_string (Pretty.sprint 80 (p#pExp () t));
      error ()
 
+
+
+let rec fltExp t cond : (stmt list * exp) =
+  match t with
+  | Const (_) -> ([], t)
+  | Lval (lval) -> todo ()
+  | Lval (Mem(e), off) ->
+     
+  | SizeOf (_) -> ([], t)
+  | SizeOfE (e) ->
+     let x = fltExp e cond in
+     (fst x, SizeOfE(snd x))
+  | SizeOfStr (_) -> ([], t)
+  | AlignOf (_) -> ([], t)
+  | AlignOfE (e) ->
+     let x = fltExp e cond in
+     (fst x, AlignOfE(snd x))
+  | UnOp (op, e, typ) ->
+     let x = fltExp e cond in
+     (fst x, UnOp(op, snd x, typ))
+  | BinOp (op, e1, e2, typ) ->
+     let x = fltExp e1 cond in
+     let y = fltExp e2 cond in
+     (((fst x) @ (fst y)), BinOp(op, snd x, snd y, typ))
+  | Question (e1, e2, e3, typ) ->
+     let x = fltExp e1 cond in
+     let y = fltExp e2 cond in
+     let z = fltExp e3 cond in
+     (((fst x) @ (fst y) @ (fst z)), Question(snd x, snd y, snd z, typ))
+  | CastE (typ, e) ->
+     let x = fltExp e cond in
+     (fst x, CastE(typ, snd x))
+  | AddrOf (lval) -> todo ()
+  | AddrOfLabel (s) -> ([], t)
+  | StartOf (lval) -> todo ()
+
+and fltLval (lhost, offset) cond : (stmt list * lval) =
+  let x = fltLhost lhost cond in
+  let y = fltOffset offset cond in
+  (((fst x) @ (fst y)), (snd x, snd y))
+
+and fltLhost t cond : (stmt list * lhost) =
+  match t with
+  | Var (_) -> ([], t)
+  | Mem (e) ->
+     let x = fltExp e cond in
+     (fst x, Mem(snd x))
+
+  
+and fltOffset t cond : (stmt list * offset) =
+  match t with
+  | NoOffset -> ([], t)
+  | Field (fi, off) ->
+     let x = fltOffset off cond in
+     (fst x, Field(fi, (snd x)))
+  | Index (e, off) ->
+     let x = fltExp e cond in
+     let y = fltOffset off cond in
+     (((fst x) @ (fst y)), Index(snd x, snd y))
+
+  
 
 let fltInstr t cond : stmt =
   let r = 
