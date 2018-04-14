@@ -107,10 +107,14 @@ let rec fltExp t cond : (instr list * exp) =
   | CastE (typ, e) ->
      let x = fltExp e cond in
      (fst x, CastE(typ, snd x))
-  (* TODO *)
-  | AddrOf (lval) -> ([], t)
+  (* CIL would do optimise to ensure that this situation could not appear *)
+  | AddrOf (Mem(e), off) ->
+     error ()
+  | AddrOf (_) -> ([], t)
   | AddrOfLabel (s) -> ([], t)
-  (* TODO *)
+  (* We assume that StartOf only apply to a Var. *)
+  | StartOf (Mem(e), off) ->
+     error ()
   | StartOf (lval) -> ([], t)
 
 and fltLval (lhost, offset) cond : (instr list * lval) =
