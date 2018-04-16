@@ -76,9 +76,13 @@ let rec fltExp t cond : (instr list * exp) =
   | Lval ((Mem(e), off) as lval) ->
      let x = fltExp e cond in
      let y = fltOffset off cond in
+     let dummy = match typeOf(t) with
+       | TFun (_, _, _, _) -> Lval(var dummyFun)
+       | _ -> dummyMem'
+     in
      let s = makeTempVar !currentFunc (makeArray (addrOfExp t)) in
-     ((fst x) @ (fst y) @ [Set(mkArraySelect s zero, dummyMem', dummyLocation)
-                          ; Set(mkArraySelect s one, mkAddrOrStartOf lval, dummyLocation)]
+     ((fst x) @ (fst y) @ [Set(mkArraySelect s zero, dummy, dummyLocation)
+                          ; Set(mkArraySelect s one, mkAddrOrStartOf (Mem(snd x), (snd y)) , dummyLocation)]
      , Lval(mkMem (Lval(mkArraySelect s cond)) NoOffset))
   | Lval (var, off) ->
      let x = fltOffset off cond in
@@ -154,25 +158,21 @@ let fltInstr t cond : stmt =
                  ; Set((mkMem (Lval(mkArraySelect s cond)) NoOffset), snd x, loc)]
     | Call (l, e, es, loc) ->
        let x = List.map (fun e -> fltExp e cond) es in
-       let instr = List.flatten (List.map (fun e -> fst e ) x) in
+       let s1 = List.flatten (List.map (fun e -> fst e ) x) in
        let es' = List.map (fun e -> snd e) x in
-       let s = makeTempVar !currentFunc (makeArray (addrOfExp e)) in
+       let y = fltExp e cond in
        let r = match l with
          | Some l ->
             let (t, _, _, _) = splitFunctionType (typeOf e) in
             let s' = makeTempVar !currentFunc (makeArray (addrOfType t)) in
-            instr @ [Set(mkArraySelect s' zero, dummyMem', loc)
-                    ; Set(mkArraySelect s' one, mkAddrOrStartOf l, loc)
-                    ; Set(mkArraySelect s zero, Lval(var dummyFun), loc)
-                    ; Set(mkArraySelect s one, e, loc)
-                    ; Call(Some (mkMem (Lval(mkArraySelect s' cond)) NoOffset)
-                         , Lval(mkArraySelect s cond)
-                         , es'
-                         , loc)]
+            (fst y) @ s1 @ [Set(mkArraySelect s' zero, dummyMem', loc)
+                           ; Set(mkArraySelect s' one, mkAddrOrStartOf l, loc)
+                           ; Call(Some (mkMem (Lval(mkArraySelect s' cond)) NoOffset)
+                                , (snd y)
+                                , es'
+                                , loc)]
          | None -> 
-            instr @ [Set(mkArraySelect s zero, Lval(var dummyFun), loc)
-                    ; Set(mkArraySelect s one, e, loc)
-                    ; Call(None, Lval((mkArraySelect s cond)), es', loc)]
+            (fst y) @ s1 @ [Call(None, (snd y), es', loc)]
        in
        r
     | Asm (_, _, _, _, _, _) -> todo ()
