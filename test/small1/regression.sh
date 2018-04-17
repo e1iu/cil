@@ -75,17 +75,21 @@ runtest() {
   prefix=${name%.*}
   mkdir ${prefix}
   cd ${prefix}
-  ${CILLY} ../${name} -o ${prefix}".out" > gcc.log 2>&1
+  gcc ../${name} -o ${prefix}".out" > gcc.log 2>&1
   if [ ! -f ${prefix}".out" ]; then
     return ${RUNTEST_WARNING}
   fi
   ${CILLY} ../${name} -o ${prefix}".cil.out" > cilly.log 2>&1
+  if [ ! -f ${prefix}".cil.out" ]; then
+    return ${RUNTEST_WARNING}
+  fi
   r1="1.result"
   r2="2.result"
-  ${CILLY} --doflatten ../${name} -o ${prefix}".flatten.out" > flatten.log 2>&1
+  ${CILLY} --doflatten --save-temps ../${name} -o ${prefix}".flatten.out" \
+    > flatten.log 2>&1
 
-  gtimeout 3 ./${prefix}".cil.out" > ${r1} 2>&1
-  gtimeout 3 ./${prefix}".flatten.out" > ${r2} 2>&1
+  timeout 3 ./${prefix}".cil.out" > ${r1} 2>&1
+  timeout 3 ./${prefix}".flatten.out" > ${r2} 2>&1
 
   cmp ${r1} ${r2} > /dev/null 2>&1
   if [ $? -ne 0 ]; then
