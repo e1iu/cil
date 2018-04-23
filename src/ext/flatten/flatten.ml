@@ -216,7 +216,6 @@ let fltSpecial s cond : stmt list =
   
 
 let rec fltStmt s cond : stmt list =
-  print_string "flt Stmt\n";
   let rec pickLabel = function
     | [] -> None
     | Label (l, _, _) :: _ -> Some l
@@ -239,14 +238,7 @@ let rec fltStmt s cond : stmt list =
        let tmp = makeTempVar !currentFunc (typeOf e) in
        let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
        let x = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkTrue (Lval (var tmp))) cond)) tb.bstmts) in
-       let y =
-         match eb with
-         | { bstmts=[{skind=If(_, _, _, _)} as elsif]; battrs=[] } ->
-            print_string "WARNING: elseif!\n";
-            List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkFalse (Lval (var tmp))) cond)) eb.bstmts)
-         | _ ->
-            List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkFalse (Lval (var tmp))) cond)) eb.bstmts)
-       in
+       let y = List.flatten (List.map (fun e' -> fltStmt e' (mkLAnd (mkFalse (Lval (var tmp))) cond)) eb.bstmts) in
        set ::(x @ y)
     | Switch (_, _, _, _) ->
        fltSpecial s cond
@@ -276,14 +268,7 @@ let scanFunc f =
        let tmp = makeTempVar !currentFunc (typeOf e) in
        let set = mkStmt (Instr([Set(var tmp, e, loc)])) in
        let x = List.flatten (List.map (fun t -> fltStmt t (mkTrue (Lval(var tmp)))) tb.bstmts) in
-       let y =
-         match eb with
-         | { bstmts=[{skind=If(e', tb', eb', _)} as elsif]; battrs=[] } ->
-            print_string "WARNING: elseif!\n";
-            List.flatten (List.map (fun t -> fltStmt t (mkFalse (Lval(var tmp)))) eb.bstmts)
-         | _ ->
-            List.flatten (List.map (fun t -> fltStmt t (mkFalse (Lval(var tmp)))) eb.bstmts)
-       in
+       let y = List.flatten (List.map (fun t -> fltStmt t (mkFalse (Lval(var tmp)))) eb.bstmts) in
        s.skind <- Block(mkBlock (set :: (List.append x y)))
     | Block (b) ->
        print_string "scan Block\n";

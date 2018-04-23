@@ -85,8 +85,8 @@ runtest() {
   fi
   r1="1.result"
   r2="2.result"
-  ${CILLY} --doflatten --save-temps ../${name} -o ${prefix}".flatten.out" \
-    > flatten.log 2>&1
+  ${CILLY} --doflatten --useLogicalOperators --save-temps ../${name} -o \
+    ${prefix}".flatten.out" > flatten.log 2>&1
 
   gtimeout 3 ./${prefix}".cil.out" > ${r1} 2>&1
   gtimeout 3 ./${prefix}".flatten.out" > ${r2} 2>&1
