@@ -88,8 +88,8 @@ runtest() {
   ${CILLY} --doflatten --save-temps ../${name} -o ${prefix}".flatten.out" \
     > flatten.log 2>&1
 
-  timeout 3 ./${prefix}".cil.out" > ${r1} 2>&1
-  timeout 3 ./${prefix}".flatten.out" > ${r2} 2>&1
+  gtimeout 3 ./${prefix}".cil.out" > ${r1} 2>&1
+  gtimeout 3 ./${prefix}".flatten.out" > ${r2} 2>&1
 
   cmp ${r1} ${r2} > /dev/null 2>&1
   if [ $? -ne 0 ]; then
